@@ -1,4 +1,4 @@
-<img src='assets/logo.png' align='left' width='50'></img><b>
+<img src='includes/assets/logo.png' align='left' width='50'></img><b>
 # Acorn HTTP Server
 </b>
 
