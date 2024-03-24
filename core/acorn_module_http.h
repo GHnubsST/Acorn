@@ -156,7 +156,7 @@ std::ostringstream acorn_header_parser(const std::string_view& view_http_buffer)
         responseStream << responceCode << "\r\n";
         responseStream << "Server: Acorn\r\n";
         responseStream << "Content-Length: 0\r\n";
-        responseStream << "\r\n\r\n";
+        responseStream << "\r\n";
     } else {
 
         std::unordered_map<std::string_view, std::string_view> header_map;

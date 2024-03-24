@@ -16,10 +16,10 @@
 
 bool running = true;
 
-#include "core/acorn_headers.h"
-#include "core/acorn_module_http.h"
-#include "core/acorn_network_socket.h"
-#include "core/acorn_network_epoll.h"
+#include "acorn_headers.h"
+#include "acorn_module_http.h"
+#include "acorn_network_socket.h"
+#include "acorn_network_epoll.h"
 
 void signalHandler(int signum) {
     std::cout << "Interrupt signal (" << signum << ") received.\n";
