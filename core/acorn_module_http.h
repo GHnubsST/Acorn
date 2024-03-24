@@ -90,192 +90,110 @@ constexpr const char* HTTP_508 = "HTTP/1.1 508 Loop Detected";
 constexpr const char* HTTP_510 = "HTTP/1.1 510 Not Extended";
 constexpr const char* HTTP_511 = "HTTP/1.1 511 Network Authentication Required";
 
-/*************************************************WORK IN PROGRESS**********************************************************/
-class acorn_http {
-    int cleint_fd;
-    const int MAX_BUFFER_SIZE = 4096;
+constexpr const ssize_t MAX_HEADER_LENGTH = 8000;
+constexpr const ssize_t MAX_HEADER_URL_LENGTH = 4000;
 
-    std::unordered_map<std::string_view, std::string_view> acorn_http_header_parser(const std::string_view& header) {
+inline const char* acorn_header_rfc_validation(const std::string_view& view_http_buffer) {
+    size_t headerBodySeparatorPos = view_http_buffer.find("\r\n\r\n");
+    if (headerBodySeparatorPos == std::string_view::npos) {
+        return HTTP_400;
+    }
+
+    if (headerBodySeparatorPos > MAX_HEADER_LENGTH) {
+        return HTTP_431;
+    }
+
+    size_t startPos = 0;
+    while (startPos < headerBodySeparatorPos) {
+        size_t crlfPos = view_http_buffer.find("\r\n", startPos);
+        if (crlfPos == std::string_view::npos || crlfPos > headerBodySeparatorPos) {
+            return HTTP_400;
+        }
+        startPos = crlfPos + 2;
+    }
+
+    size_t firstLineEndPos = view_http_buffer.find("\r\n");
+    if (firstLineEndPos == std::string_view::npos) {
+        return HTTP_400; 
+    }
+
+    std::string_view firstLine = view_http_buffer.substr(0, firstLineEndPos);
+    auto spaceCount = std::count(firstLine.begin(), firstLine.end(), ' ');
+    if (spaceCount != 2) {
+        return HTTP_400;
+    }
+
+    size_t firstSpacePos = firstLine.find(' ');
+    size_t secondSpacePos = firstLine.rfind(' ');
+    if (firstSpacePos == std::string_view::npos || secondSpacePos == std::string_view::npos || firstSpacePos == secondSpacePos) {
+        return HTTP_400;
+    }
+
+    std::string_view method = firstLine.substr(0, firstSpacePos);
+    std::string_view target = firstLine.substr(firstSpacePos + 1, secondSpacePos - firstSpacePos - 1);
+    std::string_view httpVersion = firstLine.substr(secondSpacePos + 1);
+
+    if (method != "GET" && method != "POST" && method != "HEAD") {
+        return HTTP_405;
+    }
+
+    if (target.length() == 0 || target.length() > MAX_HEADER_URL_LENGTH) {
+        return HTTP_414;
+    }
+
+    if (httpVersion != "HTTP/1.1" && httpVersion != "HTTP/1.0") {
+        return HTTP_505;
+    }
+
+    return nullptr;
+}
+
+std::ostringstream acorn_header_parser(const std::string_view& view_http_buffer) {
+    std::ostringstream responseStream;
+
+     const char * responceCode = acorn_header_rfc_validation(view_http_buffer);
+     if(responceCode != nullptr) {
+        responseStream << responceCode << "\r\n";
+        responseStream << "Server: Acorn\r\n";
+        responseStream << "Content-Length: 0\r\n";
+        responseStream << "\r\n\r\n";
+    } else {
 
         std::unordered_map<std::string_view, std::string_view> header_map;
-
-        size_t firstLineEnd = header.find("\r\n");
-        if (firstLineEnd == std::string_view::npos) {
-            header_map["HTTP-Code"] = HTTP_400;
-            return header_map;
-        }
-
-        std::string_view request_line = header.substr(0, firstLineEnd);
-        if (request_line.length() > 8000) {
-            header_map["HTTP-Code"] = HTTP_414;
-            return header_map;
-        }
         
-        size_t whiteSpaceCount = std::count(request_line.begin(), request_line.end(), ' ');
-        if (whiteSpaceCount != 2) {
-            header_map["HTTP-Code"] = HTTP_400; 
-            return header_map;
-        }
+        size_t firstLineEndPos = view_http_buffer.find("\r\n");
+        std::string_view firstLine = view_http_buffer.substr(0, firstLineEndPos);
 
-        size_t firstSpace = request_line.find(' ');
-        size_t secondSpace = request_line.find(' ', firstSpace + 1);
-        if (firstSpace == std::string_view::npos || secondSpace == std::string_view::npos) {
-            header_map["HTTP-Code"] = HTTP_400;
-            return header_map;
-        }
+        size_t firstSpacePos = firstLine.find(' ');
+        size_t secondSpacePos = firstLine.rfind(' ');
 
-        std::string_view method = request_line.substr(0, firstSpace);
-        std::string_view request_target = request_line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
-        std::string_view version = request_line.substr(secondSpace + 1);
-
-        if (method != "GET" && method != "POST" && method != "HEAD") {
-            header_map["HTTP-Code"] = HTTP_405;
-            return header_map;
-        }
-
-        if (version != "HTTP/1.1" && version != "HTTP/1.0") { 
-            header_map["HTTP-Code"] = HTTP_505;
-            return header_map;
-        }
-
-        size_t start = firstLineEnd + 2;
-        while (start < header.size()) {
-            size_t end = header.find("\r\n", start);
-            if (end == std::string_view::npos || header[start] == '\r') break;
-
-            auto line = header.substr(start, end - start);
-            auto colonPos = line.find(':');
-            if (colonPos == std::string_view::npos || line.find_first_not_of(" \t") != 0 || line[colonPos - 1] == ' ' || line[colonPos - 1] == '\t') {
-                header_map["HTTP-Code"] = HTTP_400;
-                return header_map;
-            }
-
-            auto key = line.substr(0, colonPos);
-            auto value = line.substr(colonPos + 1).substr(line.substr(colonPos + 1).find_first_not_of(" \t"));
-            header_map[key] = value;
-            start = end + 2;
-        }
+        std::string_view method = firstLine.substr(0, firstSpacePos);
+        std::string_view request_target = firstLine.substr(firstSpacePos + 1, secondSpacePos - firstSpacePos - 1);
 
         header_map["Method"] = method;
         header_map["Request-Target"] = request_target;
-        header_map["HTTP-Code"] = HTTP_200;
 
-        return header_map;
+        std::time_t currentTime = std::time(nullptr);
+        std::tm* currentTm = std::gmtime(&currentTime);
+        char timeStr[80];
+        std::strftime(timeStr, sizeof(timeStr), "%a, %d %b %Y %H:%M:%S GMT", currentTm);
+        std::string content = "<!DOCTYPE html><html lang=\"en\"><head><title>Acorn Web Server</title><meta charset=\"utf-8\"></head><body><h1>Hello, Welcome..</h1></body></html>";
+        std::stringstream etagStream;
+        etagStream << "\"" << std::hex << std::hash<std::string>{}(content) << "\"";
+        std::string etag = etagStream.str();
+        responseStream << HTTP_200 << "\r\n";
+        responseStream << "Date: " << timeStr << "\r\n";
+        responseStream << "Server: Acorn\r\n";
+        responseStream << "Last-Modified: " << timeStr << "\r\n";
+        responseStream << "ETag: " << etag << "\r\n";
+        responseStream << "Accept-Ranges: bytes\r\n";
+        responseStream << "Content-Length: " << content.length() << "\r\n";
+        responseStream << "Vary: Accept-Encoding\r\n";
+        responseStream << "Content-Type: text/html\r\n";
+        responseStream << "\r\n\r\n";
+        responseStream << content << "\r\n";
     }
 
-    void acorn_http_worker(const int &cfd) {
-        ssize_t totalBytesRead = 0;
-        ssize_t bytesRead;
-        char buffer[MAX_BUFFER_SIZE] = {0}; 
-
-        do {
-            bytesRead = recv(cfd, buffer + totalBytesRead, sizeof(buffer) - totalBytesRead - 1, 0);
-            if (bytesRead == -1) {
-                if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    std::cerr << "Error receiving data: " << strerror(errno) << std::endl;
-                    close(cfd);
-                }
-            } else if (bytesRead == 0) {
-                std::cout << "Cant Read Connection closed by client: " << cfd << std::endl;
-                close(cfd);
-            } else {
-                totalBytesRead += bytesRead;
-                if (totalBytesRead >= MAX_BUFFER_SIZE - 1) {
-                    break;
-                }
-            }
-        } while (bytesRead > 0);
-
-        buffer[totalBytesRead] = '\0';
-
-        std::string_view httpRequest(buffer, totalBytesRead);
-        std::string_view header, body;
-
-        auto pos = httpRequest.find("\r\n\r\n");
-        if (pos != std::string_view::npos) {
-            header = std::string_view(httpRequest.data(), pos);
-            body = std::string_view(httpRequest.data() + pos + 4, totalBytesRead - pos - 4);
-        } else {
-            header = httpRequest;
-            body = std::string_view();
-        }
-
-        
-        auto http_code = acorn_http_header_parser(header);
-
-        for (const auto& [key, value] : http_code) {
-            std::cout << key << ":" << value << std::endl;
-        }
-
-        std::ostringstream responseStream;
-        if(http_code["HTTP-Code"] == HTTP_200) {
-            std::time_t currentTime = std::time(nullptr);
-            std::tm* currentTm = std::gmtime(&currentTime);
-            char timeStr[80];
-            std::strftime(timeStr, sizeof(timeStr), "%a, %d %b %Y %H:%M:%S GMT", currentTm);
-            std::string content = "<!DOCTYPE html><html lang=\"en\"><head><title>Acorn Web Server</title><meta charset=\"utf-8\"></head><body><h1>Hello, Welcome..</h1></body></html>";
-            std::stringstream etagStream;
-            etagStream << "\"" << std::hex << std::hash<std::string>{}(content) << "\"";
-            std::string etag = etagStream.str();
-            responseStream << http_code["HTTP-Code"] << "\r\n";
-            responseStream << "Date: " << timeStr << "\r\n";
-            responseStream << "Server: Acorn\r\n";
-            responseStream << "Last-Modified: " << timeStr << "\r\n";
-            responseStream << "ETag: " << etag << "\r\n";
-            responseStream << "Accept-Ranges: bytes\r\n";
-            responseStream << "Content-Length: " << content.length() << "\r\n";
-            responseStream << "Vary: Accept-Encoding\r\n";
-            responseStream << "Content-Type: text/html\r\n";
-            responseStream << "\r\n";
-            responseStream << content << "CRLF.";
-        } else {
-            responseStream << http_code["HTTP-Code"];
-            responseStream << "Server: Acorn\r\n";
-            responseStream << "Content-Length: 0" << "\r\n";
-        }
-
-        std::string str = responseStream.str();
-        char response[str.length() + 1];
-        std::strcpy(response, str.c_str());
-
-        ssize_t bytesSent = send(cfd, response, strlen(response), 0);
-        if (bytesSent == -1) {
-            std::cerr << "Error sending data to client: " << strerror(errno) << std::endl;
-        } else {
-            std::cout << "Sent data to client " << cfd << std::endl;
-        }
-    }
-public:
-    void acorn_http_workers(const int& cfd) {
-        cleint_fd = cfd;
-        acorn_http_worker(cleint_fd);
-    }
-};
-/*************************************************WORK IN PROGRESS**********************************************************/
-
-/*
-    ** RFC7230 **
-    *
-    * 
-    *******acorn_http_header_parser*******
-    *   
-    *   CHECKS
-    *   1. if no CRLF(\r\n) are found in the header set HTTP_CODE to HTTP_400 as its a malformed request
-    *   2. Extract and validate the request line, which will set HTTP_400 as a malformed request
-    *      rfc7230 - no space or spaces before the method, or in the method, only one space after the method
-    *      rfc7230 - no spaces within the request-line only before and after
-    *      rfc7230 - no spaces within the HTTP-version only before but not after
-    *      rfc7230 - method SP request-target SP HTTP-version CRLF
-    *      rfc7231 - url to long HTTP_414 Request-URI too long
-    *      rfc7230 - method must be capital letters
-    *      rfc7230 - if HTTP version is not HTTP/1.1 then set HTTP_505 HTTP/1.1 505 HTTP Version Not Supported
-    *   3. Acorn uses GET,POST,HEAD and sets HTTP_CODE to HTTP_405 method not found for others
-    *   4. [key: value] map 
-    *      rfc7230 - 3.2.4 no space or spaces before or after keys or within keys otherwise set HTTP_400 as a malformed request
-    *      rfc7230 - 3.2.4 if theres no colon then HTTP_400 as a malformed request
-    * 
-    * 
-    * *************************************
-*/
-
+    return responseStream;
+}
 #endif

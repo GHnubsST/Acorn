@@ -14,12 +14,12 @@
 *   limitations under the License.
 */
 
+bool running = true;
+
 #include "core/acorn_headers.h"
 #include "core/acorn_module_http.h"
 #include "core/acorn_network_socket.h"
 #include "core/acorn_network_epoll.h"
-
-bool running = true;
 
 void signalHandler(int signum) {
     std::cout << "Interrupt signal (" << signum << ") received.\n";
@@ -36,28 +36,16 @@ int main() {
     acorn_socket listen;
     listen.addressPort.emplace_back(std::make_pair("127.0.0.1", 8080));
     listen.addressPort.emplace_back(std::make_pair("::1", 8080));
-    listen.addressPort.emplace_back(std::make_pair("127.0.0.1", 8443));
-    listen.addressPort.emplace_back(std::make_pair("::1", 8443));
     listen.acorn_listener();
 
     acorn_epoll epoll_init;
     try {
         epoll_init.acorn_createEpoll();
         epoll_init.acorn_epollAddMSocket(listen._msock);
+        epoll_init.acorn_epollEventsReady();
     }
     catch (const std::runtime_error& e) {
         std::cerr << e.what() << std::endl;
-    }
-
-    while(running) {
-
-        try {
-            epoll_init.acorn_epollEventsReady();
-        }
-        catch (const std::runtime_error& e) {
-            std::cerr << e.what() << std::endl;
-            break;
-        } 
     }
 
     std::cout << "Acorn Closed." << std::endl;

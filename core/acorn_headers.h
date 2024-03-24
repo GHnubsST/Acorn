@@ -55,7 +55,7 @@
 
 /* Dynamic memory management */
 // #include <new>
-// #include <memory>
+#include <memory>
 // #include <memory_resource>
 // #include <scoped_allocator>
 
@@ -95,7 +95,7 @@
 /* Utilities library */
 // #include <any>
 // #include <bitset>
-// #include <chrono>
+#include <chrono>
 // #include <compare>
 // #include <csignal>
 #include <iostream>
